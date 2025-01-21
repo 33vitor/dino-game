@@ -1,6 +1,6 @@
 {
-    "name": "dino_game",
-    "short_name": "dino_game",
+    "name": "dino_run",
+    "short_name": "dino_run",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

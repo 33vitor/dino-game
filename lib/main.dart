@@ -1,165 +1,92 @@
-import 'dart:math';
+import 'package:flame/camera.dart';
+import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'cactus.dart';
-import 'cloud.dart';
-import 'dino.dart';
-import 'game-object.dart';
-import 'ground.dart';
+import 'package:path_provider/path_provider.dart';
 
-void main() {
-  runApp(MyApp());
+import 'widgets/hud.dart';
+import 'game/dino_run.dart';
+import 'models/settings.dart';
+import 'widgets/main_menu.dart';
+import 'models/player_data.dart';
+import 'widgets/pause_menu.dart';
+import 'widgets/settings_menu.dart';
+import 'widgets/game_over_menu.dart';
+
+Future<void> main() async {
+  // Ensures that all bindings are initialized
+  // before was start calling hive and flame code
+  // dealing with platform channels.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initializes hive and register the adapters.
+  await initHive();
+  runApp(const DinoRunApp());
 }
 
-class MyApp extends StatelessWidget {
-  // This widget is the root of your application.
+// This function will initilize hive with apps documents directory.
+// Additionally it will also register all the hive adapters.
+Future<void> initHive() async {
+  // For web hive does not need to be initialized.
+  if (!kIsWeb) {
+    final dir = await getApplicationDocumentsDirectory();
+    Hive.init(dir.path);
+  }
+
+  Hive.registerAdapter<PlayerData>(PlayerDataAdapter());
+  Hive.registerAdapter<Settings>(SettingsAdapter());
+}
+
+// The main widget for this game.
+class DinoRunApp extends StatelessWidget {
+  const DinoRunApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Dino',
+      debugShowCheckedModeBanner: false,
+      title: 'Dino Run',
       theme: ThemeData(
+        fontFamily: 'Audiowide',
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
+        // Settings up some default theme for elevated buttons.
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 10.0),
+            fixedSize: const Size(200, 60),
+          ),
+        ),
       ),
-      home: MyHomePage(title: 'Flutter Dino Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  MyHomePage({Key key, this.title}) : super(key: key);
-
-  final String title;
-
-  @override
-  _MyHomePageState createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage>
-    with SingleTickerProviderStateMixin {
-  Dino dino = Dino();
-  double runDistance = 0;
-  double runVelocity = 30;
-
-  AnimationController worldController;
-  Duration lastUpdateCall = Duration();
-
-  List<Cactus> cacti = [Cactus(worldLocation: Offset(200, 0))];
-
-  List<Ground> ground = [
-    Ground(worldLocation: Offset(0, 0)),
-    Ground(worldLocation: Offset(groundSprite.imageWidth / 10, 0))
-  ];
-
-  List<Cloud> clouds = [
-    Cloud(worldLocation: Offset(100, 20)),
-    Cloud(worldLocation: Offset(200, 10)),
-    Cloud(worldLocation: Offset(350, -10)),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-
-    worldController =
-        AnimationController(vsync: this, duration: Duration(days: 99));
-    worldController.addListener(_update);
-    worldController.forward();
-  }
-
-  void _die() {
-    setState(() {
-      worldController.stop();
-      dino.die();
-    });
-  }
-
-  _update() {
-    dino.update(lastUpdateCall, worldController.lastElapsedDuration);
-
-    double elapsedTimeSeconds =
-        (worldController.lastElapsedDuration - lastUpdateCall).inMilliseconds /
-            1000;
-
-    runDistance += runVelocity * elapsedTimeSeconds;
-
-    Size screenSize = MediaQuery.of(context).size;
-
-    Rect dinoRect = dino.getRect(screenSize, runDistance);
-    for (Cactus cactus in cacti) {
-      Rect obstacleRect = cactus.getRect(screenSize, runDistance);
-      if (dinoRect.overlaps(obstacleRect)) {
-        _die();
-      }
-
-      if (obstacleRect.right < 0) {
-        setState(() {
-          cacti.remove(cactus);
-          cacti.add(Cactus(
-              worldLocation:
-                  Offset(runDistance + Random().nextInt(100) + 50, 0)));
-        });
-      }
-    }
-
-    for (Ground groundlet in ground) {
-      if (groundlet.getRect(screenSize, runDistance).right < 0) {
-        setState(() {
-          ground.remove(groundlet);
-          ground.add(Ground(
-              worldLocation: Offset(
-                  ground.last.worldLocation.dx + groundSprite.imageWidth / 10,
-                  0)));
-        });
-      }
-    }
-
-    for (Cloud cloud in clouds) {
-      if (cloud.getRect(screenSize, runDistance).right < 0) {
-        setState(() {
-          clouds.remove(cloud);
-          clouds.add(Cloud(
-              worldLocation: Offset(
-                  clouds.last.worldLocation.dx + Random().nextInt(100) + 50,
-                  Random().nextInt(40) - 20.0)));
-        });
-      }
-    }
-
-    lastUpdateCall = worldController.lastElapsedDuration;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    Size screenSize = MediaQuery.of(context).size;
-    List<Widget> children = [];
-
-    for (GameObject object in [...clouds, ...ground, ...cacti, dino]) {
-      children.add(AnimatedBuilder(
-          animation: worldController,
-          builder: (context, _) {
-            Rect objectRect = object.getRect(screenSize, runDistance);
-            return Positioned(
-              left: objectRect.left,
-              top: objectRect.top,
-              width: objectRect.width,
-              height: objectRect.height,
-              child: object.render(),
-            );
-          }));
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-      ),
-      body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: () {
-          dino.jump();
-        },
-        child: Stack(
-          alignment: Alignment.center,
-          children: children,
+      home: Scaffold(
+        body: GameWidget<DinoRun>.controlled(
+          // This will dislpay a loading bar until [DinoRun] completes
+          // its onLoad method.
+          loadingBuilder: (conetxt) => const Center(
+            child: SizedBox(
+              width: 200,
+              child: LinearProgressIndicator(),
+            ),
+          ),
+          // Register all the overlays that will be used by this game.
+          overlayBuilderMap: {
+            MainMenu.id: (_, game) => MainMenu(game),
+            PauseMenu.id: (_, game) => PauseMenu(game),
+            Hud.id: (_, game) => Hud(game),
+            GameOverMenu.id: (_, game) => GameOverMenu(game),
+            SettingsMenu.id: (_, game) => SettingsMenu(game),
+          },
+          // By default MainMenu overlay will be active.
+          initialActiveOverlays: const [MainMenu.id],
+          gameFactory: () => DinoRun(
+            // Use a fixed resolution camera to avoid manually
+            // scaling and handling different screen sizes.
+            camera: CameraComponent.withFixedResolution(
+              width: 360,
+              height: 180,
+            ),
+          ),
         ),
       ),
     );
